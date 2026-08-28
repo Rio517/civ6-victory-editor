@@ -127,6 +127,26 @@ When a victory triggers, four records appear in the live config only:
 The result is structurally indistinguishable from a save taken before the
 victory happened.
 
+## Why not just diff two turns?
+
+A natural idea for finding state inside the compressed payload is to diff a save
+against the one from the turn before. Measured on two consecutive late-game
+autosaves (turn 613 -> 614, inflated payloads of ~34.9 MB):
+
+| Probe | Result |
+|---|---|
+| Common prefix / suffix | 133 B / 20 B |
+| 4 KB blocks of turn 614 found *anywhere* in turn 613 | 19% |
+| 1 KB blocks | 34% |
+| 256 B blocks | 39% |
+
+So roughly 60-80% of the payload is rewritten every single turn. There is no
+practical way to isolate a few bytes of victory flag from that much legitimate
+churn, and byte-level differential analysis of the game state is a dead end.
+Reading the payload requires reverse-engineering the `CvGame` serialization
+itself. The header, by contrast, is fully structured and safe to edit - which is
+why this tool stays there.
+
 ## Caveats
 
 - Whether the compressed game state *also* records a winner is not established
