@@ -25,7 +25,7 @@ No dependencies, Python 3.8+. Drop the output in your `Saves/Single` folder and 
 |  'CIV6' + version words  |
 |  plaintext record tree   |   <-- all game configuration lives here
 +--------------------------+  ~150 KB in a late-game save
-|  one zlib stream         |   <-- the entire game state, tens of MB inflated
+|  CHUNKED deflate stream  |   <-- the entire game state, tens of MB inflated
 |  ends 00 00 FF FF        |       (Z_SYNC_FLUSH, no adler32 checksum)
 +--------------------------+
 |  30025-byte trailer      |
@@ -167,28 +167,36 @@ bytes to ~481 bytes when a victory fires, gaining one row per player per enabled
 victory type, keyed by the same inverted-CRC32 hashes (`VICTORY_TECHNOLOGY` etc.)
 the header uses. Pre-win it holds `ff ff ff ff ff ff ff ff`.
 
-**The compressed section cannot be rebuilt.** This is the hard blocker, and it was
-tested: take a save, inflate the payload, re-deflate it *completely unchanged*
-(raw zlib closed with `Z_SYNC_FLUSH`, no adler32 — byte-identical inflate output,
-header and trailer untouched) and reassemble. Civilization VI hangs on load,
-pegging a core. The re-deflated stream round-trips perfectly through Python's
-zlib and is framed the same way as the original — a single deflate stream with
-one terminating `00 00 ff ff` and no interior sync flushes — so whatever the game
-requires is something this reproduction does not capture. The trailer was checked
-and ruled out as an offset table (5187 non-zero dwords, non-monotonic, mostly
-small counters).
+### The compressed section is chunked — this is the part that bites
 
-The practical consequence: **any edit requiring the payload to be re-compressed is
-off the table.** Header edits work precisely because the payload is passed through
-byte-for-byte and never re-encoded. Anyone attempting payload work should build a
-recompress-only control save first — it fails, and it fails identically to a
-"real" edit, which will otherwise send you chasing the wrong cause.
+It is **not** one flat zlib stream. The compressed bytes are stored in 64 KiB
+chunks with a `u32` little-endian length of the *following* chunk written between
+them:
 
-**So:** disabling victory conditions works on any save. *Undoing* an achieved
-victory does not, because Civ VI stops evaluating all victory conditions once one
-fires and that state lives in the payload. To keep playing a decided game with a
-real shot at another victory, start from a save taken *before* the win and disable
-the conditions you don't want.
+    [64KiB compressed][u32 len][64KiB][u32 len]...[final partial chunk]
+
+In one 3.6 MB save that is 54 separators: 53 reading exactly `65536` and a final
+`63707`.
+
+Two traps, both of which cost real time here:
+
+1. **Inflating without stripping the separators appears to work.** zlib returns a
+   plausible-looking buffer of nearly the right size (35,585,439 vs the correct
+   35,594,002). It is silently wrong. The tell is that `00 00 01 00` decodes as a
+   deflate stored-block header with `LEN=0, NLEN=1`, which is where an
+   *"invalid stored block lengths"* error comes from if you inflate past it.
+2. **Writing without re-inserting them makes Civ VI hang on load at 100% CPU** —
+   with no error, and identically whether or not you changed anything. Build a
+   rebuild-only control save to catch this; if the control hangs too, the
+   container is wrong, not your edit.
+
+`civ6save.py` implements both directions. `split()` strips the separators,
+`rebuild()` re-interleaves them. A no-op round-trip reproduces the payload,
+header and trailer byte-for-byte.
+
+Undoing a victory is still unproven — Civ VI stops evaluating all victory
+conditions permanently once one fires, and whether blanking the `GAME_SUMMARY`
+references restores that is untested. Disabling victory conditions is proven.
 
 ## Caveats
 
