@@ -1,0 +1,5 @@
+# never commit save games
+*.Civ6Save
+*.Civ6Cfg
+__pycache__/
+*.pyc
