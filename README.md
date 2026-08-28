@@ -147,6 +147,49 @@ Reading the payload requires reverse-engineering the `CvGame` serialization
 itself. The header, by contrast, is fully structured and safe to edit - which is
 why this tool stays there.
 
+## Where an achieved victory actually lives (and why you can't remove it)
+
+Editing the header's `VICTORY_*` records makes a save *look* un-won, but it does
+not undo the win. Civ VI permanently stops evaluating victory conditions once any
+victory has been achieved — "One More Turn" lets you keep playing, not keep
+winning. Symptom: every victory type shows **"Victory Not Completable"** on the
+World Rankings *Overall* panel, because `Game.GetVictoryProgressForTeam()`
+returns nil for every team.
+
+Note the Overall panel and the per-victory tabs do *not* share a data source. The
+Domination tab counts `city:IsOriginalCapital()` itself and keeps showing sensible
+numbers; only the Overall panel asks the game core whether a win is still
+possible. Don't read the tab as evidence the victory is still live.
+
+The real state is in the compressed payload. It is findable — the tail
+`GAME_SUMMARY` block, immediately before `CONTEXT_ACHIEVEMENTS`, grows from ~33
+bytes to ~481 bytes when a victory fires, gaining one row per player per enabled
+victory type, keyed by the same inverted-CRC32 hashes (`VICTORY_TECHNOLOGY` etc.)
+the header uses. Pre-win it holds `ff ff ff ff ff ff ff ff`.
+
+**The compressed section cannot be rebuilt.** This is the hard blocker, and it was
+tested: take a save, inflate the payload, re-deflate it *completely unchanged*
+(raw zlib closed with `Z_SYNC_FLUSH`, no adler32 — byte-identical inflate output,
+header and trailer untouched) and reassemble. Civilization VI hangs on load,
+pegging a core. The re-deflated stream round-trips perfectly through Python's
+zlib and is framed the same way as the original — a single deflate stream with
+one terminating `00 00 ff ff` and no interior sync flushes — so whatever the game
+requires is something this reproduction does not capture. The trailer was checked
+and ruled out as an offset table (5187 non-zero dwords, non-monotonic, mostly
+small counters).
+
+The practical consequence: **any edit requiring the payload to be re-compressed is
+off the table.** Header edits work precisely because the payload is passed through
+byte-for-byte and never re-encoded. Anyone attempting payload work should build a
+recompress-only control save first — it fails, and it fails identically to a
+"real" edit, which will otherwise send you chasing the wrong cause.
+
+**So:** disabling victory conditions works on any save. *Undoing* an achieved
+victory does not, because Civ VI stops evaluating all victory conditions once one
+fires and that state lives in the payload. To keep playing a decided game with a
+real shot at another victory, start from a save taken *before* the win and disable
+the conditions you don't want.
+
 ## Caveats
 
 - Whether the compressed game state *also* records a winner is not established
