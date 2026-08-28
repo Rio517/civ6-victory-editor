@@ -47,15 +47,20 @@ def separators(path):
     return out
 
 def rebuild(header, payload, trailer, level=6):
-    """Deflate and re-interleave the chunk-length separators."""
+    """Deflate and re-interleave the chunk-length separators.
+
+    The whole deflate stream is chunked, terminator included: in a real save the
+    closing 00 00 ff ff sits inside the final chunk and is counted by that
+    chunk's length. Writing it outside the chunk structure gets the save as far
+    as "Save version is incompatible".
+    """
     co = zlib.compressobj(level, zlib.DEFLATED, zlib.MAX_WBITS)
     body = co.compress(payload) + co.flush(zlib.Z_SYNC_FLUSH)
     assert body.endswith(b'\x00\x00\xff\xff')
-    body = body[:-4]                      # terminator is written separately
     out = []
     for i in range(0, len(body), CHUNK):
         piece = body[i:i + CHUNK]
         if i:
             out.append(struct.pack('<I', len(piece)))
         out.append(piece)
-    return header + b''.join(out) + b'\x00\x00\xff\xff' + trailer
+    return header + b''.join(out) + trailer
