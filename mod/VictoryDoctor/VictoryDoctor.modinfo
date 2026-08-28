@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Mod id="7c1f0a52-3f4b-4a19-9c62-2b6f0d4e8a01" version="1">
+  <Properties>
+    <Name>Victory Doctor (diagnostic)</Name>
+    <Authors>local</Authors>
+    <Teaser>Logs victory state to Lua.log. Read-only.</Teaser>
+    <Description>Dumps winning team, per-victory enabled flags, per-team victory progress and original-capital ownership to Lua.log. Changes nothing.</Description>
+    <AffectsSavedGames>0</AffectsSavedGames>
+    <CompatibleVersions>1.2,2.0</CompatibleVersions>
+  </Properties>
+  <InGameActions>
+    <AddUserInterfaces id="victorydoctor_ui">
+      <Properties>
+        <Context>InGame</Context>
+      </Properties>
+      <File>ui/victorydoctor.xml</File>
+    </AddUserInterfaces>
+  </InGameActions>
+  <Files>
+    <File>ui/victorydoctor.xml</File>
+    <File>ui/victorydoctor.lua</File>
+  </Files>
+</Mod>
