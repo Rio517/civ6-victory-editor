@@ -190,9 +190,14 @@ Two traps, both of which cost real time here:
    rebuild-only control save to catch this; if the control hangs too, the
    container is wrong, not your edit.
 
-`civ6save.py` implements both directions. `split()` strips the separators,
-`rebuild()` re-interleaves them. A no-op round-trip reproduces the payload,
-header and trailer byte-for-byte.
+**Credit where it is due: this chunking scheme is not a discovery of this
+project.** It is documented in working code in
+[lucienmaloney/civ6save-editing](https://github.com/lucienmaloney/civ6save-editing)
+(`index.js`, `decompress`/`recompress`), which strips the separators on read and
+re-interleaves them on write. `civ6save.py` here is a Python reimplementation of
+that same approach; reading that repository is what unblocked this one after a
+day of chasing the wrong cause. If you are doing anything with the compressed
+payload, start there.
 
 Undoing a victory is still unproven — Civ VI stops evaluating all victory
 conditions permanently once one fires, and whether blanking the `GAME_SUMMARY`
@@ -220,13 +225,41 @@ Changes are validated rather than assumed:
 - Against a save from the turn *before* the victory, `--clear-victory` produces
   an identical configuration key set — no difference in either direction.
 
-## Prior art
+## Prior art and credit
 
-[pydt/civ6-save-parser](https://github.com/pydt/civ6-save-parser) documents the
-container and record types and is the reference implementation for reading these
-files; it identifies fields by hardcoded byte markers rather than by hashing
-names. This project adds the key-hash derivation and the victory-specific
-editing on top.
+Almost everything about the *container* here was worked out by other people
+first. This project stands on:
+
+- **[lucienmaloney/civ6save-editing](https://github.com/lucienmaloney/civ6save-editing)**
+  — the 64 KiB chunking of the compressed section, in both directions. This is
+  the single most important piece of knowledge for editing the payload, and it is
+  the thing that is easiest to get catastrophically wrong. Its `index.js` is the
+  reference `civ6save.py` follows.
+- **[pydt/civ6-save-parser](https://github.com/pydt/civ6-save-parser)** — the
+  header record layout and data types, and the reference implementation for
+  reading these files. Its handling of null strings (tag `0x00`/`0x20` carrying
+  four trailing bytes) fixed a parser bug here that had resisted several guesses.
+- **[This CivFanatics thread](https://forums.civfanatics.com/threads/civ-6-savegame-editing-round-limit-score-victory.643742/)**
+  — first pointed at victory settings living in the header at all. Its published
+  offsets anchor one record earlier than the field they name, which the key-hash
+  approach below makes moot, but it asked the right question first.
+- **Firaxis' own shipped files** — `Assets/**/Configuration/**.xml` and the
+  `GameCore_*.dll` string tables are the ground truth for every identifier name.
+  Nothing here needed guessing once the hash was known.
+
+What this project adds on top: deriving record keys as **inverted CRC-32** of the
+setting name (so fields are identified by name rather than hardcoded offsets or
+byte markers), the mapping of the victory configuration and the victory-result
+records, and a tool that edits them.
+
+## Acknowledgements
+
+Found the hard way, in a real game, by someone who refused to accept two wrong
+conclusions: that the Domination victory had "never been winnable" (a screenshot
+of turn 611 showing 6 captured capitals settled that), and that the compressed
+section could not be rebuilt (it can — see above). The in-place
+`ff ff ff ff` blanking approach, which avoids the length changes that make
+splicing unsafe, was their idea too.
 
 ## License
 
